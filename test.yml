@@ -1,0 +1,6 @@
+---
+- hosts: control
+  connection: local
+
+  roles:
+    - azure

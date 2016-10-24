@@ -1,0 +1,86 @@
+---
+# tasks file for azure
+- name: Create a resource group
+  azure_rm_resourcegroup:
+    name: NBTEST1
+    location: uksouth
+    tags:
+      testing: testing
+      delete: never
+
+- name: Create storage account
+  azure_rm_storageaccount:
+    resource_group: NBTEST1
+    name: nbaccount001
+    account_type: Standard_LRS
+
+- name: Create virtual network
+  azure_rm_virtualnetwork:
+    resource_group: NBTEST1
+    name: testvn001
+    address_prefixes: "10.10.0.0/16"
+
+- name: Add subnet
+  azure_rm_subnet:
+    resource_group: NBTEST1
+    name: subnet001
+    address_prefix: "10.10.0.0/24"
+    virtual_network: testvn001
+
+- name: Create public ip
+  azure_rm_publicipaddress:
+    resource_group: NBTEST1
+    allocation_method: Static
+    name: "publicip_{{ VMNAME }}"
+  register:
+    publicip
+
+- name: checkout the ip
+  debug:
+    var : publicip
+
+- name: Create security group that allows SSH
+  azure_rm_securitygroup:
+    resource_group: NBTEST1
+    name: secgroup001
+    rules:
+      - name: SSH
+        protocol: Tcp
+        destination_port_range: 22
+        access: Allow
+        priority: 101
+        direction: Inbound
+
+- name: Create NIC
+  azure_rm_networkinterface:
+    resource_group: NBTEST1
+    name: "{{ VMNAME|default('testvm001') }}_nic1"
+    virtual_network: testvn001
+    subnet: subnet001
+    public_ip_name: "publicip_{{ VMNAME }}"
+    security_group: secgroup001
+
+- name: Create virtual machine
+  azure_rm_virtualmachine:
+    resource_group: NBTEST1
+    name: "{{ VMNAME|default('testvm001') }}"
+    vm_size: Basic_A0
+    storage_account: nbaccount001
+    storage_container: "{{ VMNAME }}"
+    storage_blob: "{{ VMNAME }}.vhd"
+    admin_username: nickbarton
+    ssh_password_enabled: false
+    ssh_public_keys:
+    - path: /home/nickbarton/.ssh/authorized_keys
+      key_data: ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDNiA7KlRBS6AD7UfqYGFneViTqJHmTVUOwMcov1o8PqiKN4fNrdaA3N/fk4IdRYdV6oVc5MdM64y0lD5hLTQERN1GtRfkCBWuL5qVeBLMM6qyo0LASL34KMR/bKt7JbrOGPM1uwldEADP8xVdqDnXfTPBg3AjYOOF2oyWKQ1bujB0xTkTPGK+VMOjw6dGWSFayn1F8Vyvny4qdO11gu2LXXH9zewZNfurtjmqQh1xgj3FhLAS/7NAF5MOhtB/drSkmybII1xZofPhIujqzJhq2g2aUPe2GywzSi/mMuklFrwvLulZrJsNgxpAAU2oMFAM1+ZshT/bK8P7QOytuZiy9 nickbarton@control
+    network_interfaces: "{{ VMNAME|default('testvm001') }}_nic1"
+    image:
+      offer: CentOS
+      publisher: OpenLogic
+      sku: '7.2'
+      version: latest
+  register : azure_vm
+
+- add_host: name="{{ publicip.state.ip_address }}" 
+            groups=azure_vms
+            ansible_user=nickbarton
